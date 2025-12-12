@@ -36,7 +36,7 @@ class FlatFolderDataset(data.Dataset):
         path = self.paths[index]
         img = Image.open(str(path)).convert('RGB')
         img = self.transform(img)
-        return img
+        return img, str(path)  # Return path along with image
 
     def __len__(self):
         return len(self.paths)
@@ -77,7 +77,10 @@ def main():
     save_dir.mkdir(exist_ok=True, parents=True)
     log_dir = Path(args.log_dir)
     log_dir.mkdir(exist_ok=True, parents=True)
-    writer = SummaryWriter(log_dir=str(log_dir))
+    
+    # Name log directory after the style directory
+    style_dir_name = Path(args.style_dir).name
+    writer = SummaryWriter(log_dir=str(log_dir / style_dir_name))
 
     decoder = net.decoder
     vgg = net.vgg
@@ -109,8 +112,14 @@ def main():
 
     for i in tqdm(range(args.max_iter)):
         adjust_learning_rate(optimizer, iteration_count=i, args=args)
-        content_images = next(content_iter).to(device)
-        style_images = next(style_iter).to(device)
+        
+        # Unpack images and paths
+        content_images, _ = next(content_iter)
+        style_images, style_paths = next(style_iter)
+        
+        content_images = content_images.to(device)
+        style_images = style_images.to(device)
+        
         loss_c, loss_s = network(content_images, style_images)
         loss_c = args.content_weight * loss_c
         loss_s = args.style_weight * loss_s
@@ -127,8 +136,11 @@ def main():
             state_dict = net.decoder.state_dict()
             for key in state_dict.keys():
                 state_dict[key] = state_dict[key].to(torch.device('cpu'))
+            
+            # Use the first style image's name for the saved model
+            style_name = Path(style_paths[0]).stem
             torch.save(state_dict, save_dir /
-                       f'{style_images.name()}_decoder_iter_{i + 1}.pth')
+                       f'{style_name}_decoder_iter_{i + 1}.pth')
     writer.close()
 
 if __name__ == '__main__':
